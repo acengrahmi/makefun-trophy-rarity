@@ -1,57 +1,29 @@
-# GTA VI trophy rarity forecaster
-
 [![make.fun](https://make.fun/badge/gta6-trophy-rarity-forecast-01.svg)](https://make.fun/bounty/gta6-trophy-rarity-forecast-01)
 [![rank](https://make.fun/badge/gta6-trophy-rarity-forecast-01/acengrahmi/makefun-trophy-rarity/rank.svg)](https://make.fun/bounty/gta6-trophy-rarity-forecast-01)
 [![reward](https://make.fun/badge/gta6-trophy-rarity-forecast-01/acengrahmi/makefun-trophy-rarity/reward.svg)](https://make.fun/bounty/gta6-trophy-rarity-forecast-01)
 
-Forecasts every Grand Theft Auto VI (PS5) trophy's earn rate on Exophase at
-the case target, as five quantiles (5/25/50/75/95%) per trophy, scored by
-pinball loss on the logit scale. Entry for make.fun
-`gta6-trophy-rarity-forecast-01`.
+# GTA VI Trophy Rarity Forecast
 
-See the bounty page: https://make.fun/bounty/gta6-trophy-rarity-forecast-01
+Forecasts every GTA VI trophy's earn rate on Exophase at 2026-11-26T00:00:00Z, as five quantiles (5/25/50/75/95%) per trophy. Single file, `main.py`, Python 3.13 standard library only, deterministic.
 
-## How it works
+## Model
 
-Exophase refreshes its counts hours apart, so the history is a staircase:
-flat stretches separated by refresh jumps where the tracked-player count
-jumps and almost every rate falls (new players have earned far fewer
-trophies). `main.py` models the two quantities behind every rate
-`r = 100 * E / N`:
+Two branches, chosen by the shape of the case history:
 
-- **N(t)**, players tracked: log N fitted linear in log(1 + hours since
-  release) over the distinct refresh snapshots, extrapolated to the last
-  refresh expected before the target.
-- **E_i(t)**, players who earned trophy i: grown by two flows — newly
-  tracked players earning it (probability `s_i`) and already-tracked players
-  earning it later (`U_i` per player per day), fitted per trophy by ridge
-  regression over the refresh-to-refresh changes and shrunk toward the
-  tier mean (platinum/gold/silver/bronze).
+- **Flat history (launch night).** Every read is identical (N = 638), so the next read is Exophase's first refresh (N 638 → 3,868). The new cohort has finished the opening and almost nothing else, so its earns are modelled as overdispersed counts (negative binomial, size 6) concentrated on the early story chain — Chapter 1 weight 1.0, Chapter 2 0.45, Chapter 3 0.20, Chapter 4 0.09, final mission 0.02, named missions 0.15 each, quick side activities 0.05, everything else 0.03, 100%-completion gold 0 — with 80 expected new earns in total. The forecast is the quantiles of (E + k) / 3,868, so the median trophy sits at pure dilution. Longer flat horizons compound further refreshes with decaying growth (2.0×, 1.5×, …) and the same allocation. A trophy at 100% stays at 100%.
+- **Rich history (the final).** A two-flow model per trophy, dE = s·dN + U·∫N dt, fitted by weighted least squares over refresh epoch pairs and shrunk toward tier means by empirical Bayes. N(t) is projected with a saturating growth law (checkpoint log-growth rate decayed with a 2.5-day time constant), flows decay mildly over the horizon (exp(−H/12 days)), and the spread combines posterior variance, fit residuals, N uncertainty and a horizon floor (0.10 + 0.06·√days).
 
-When the history is a single flat snapshot (the practice cases), the flows
-cannot be fitted, so the program falls back to a prior for the first
-refresh, centred on the launch-night facts stated in the competition rules
-(N multiplied ~6x; the new cohort earned non-start trophies at ~1/15 of the
-old cohort's rate). The saturated 100% trophy is forecast to stay at 100%.
-
-Spreads combine the fit's parameter uncertainty, the uncertainty in N at
-the target, and a floor that grows with the horizon. See `REPORT.md` for
-the model, the validation numbers, and the honest limits.
+See `REPORT.md` for the diagnosis, the validation numbers and the honest limits.
 
 ## Run
 
 ```sh
-python3 main.py
+mkdir -p out
+MAKEFUN_INPUT_DIR=input MAKEFUN_OUTPUT_DIR=out python3 main.py
 ```
 
-Reads every `*.in` in `MAKEFUN_INPUT_DIR` (default `/input`) and writes
-`<id>.out` to `MAKEFUN_OUTPUT_DIR` (default `/output`). Python 3.13
-standard library only, no network, deterministic (two runs write identical
-bytes), ~0.1 s per case.
+Reads every `*.in` in the input directory and writes one `<id>.out` per case: `{"trophies": [{"id": n, "q": [q05, q25, q50, q75, q95]}]}`, 55 rows, non-decreasing quantiles in [0, 100]. Runs in well under the 8 s/case limit (~0.04 s/case on the practice cases) and is byte-identical across runs.
 
-## Files
+## License
 
-- `main.py` — the whole entry, single file.
-- `REPORT.md` — model, validation, and limits.
-- `dev/` — validation tooling (scorer, scenario generators, tuning):
-  not part of the graded entry.
+MIT — see `LICENSE`.
